@@ -13,16 +13,23 @@ st.set_page_config(
     layout="wide",
 )
 
-credentials = dict(st.secrets.get("credentials", {"usernames": {}}))
-if "usernames" in credentials:
-    credentials["usernames"] = {
-        k: dict(v) for k, v in credentials["usernames"].items()
-    }
+config = {"credentials": {"usernames": {}}}
+try:
+    users = st.secrets["credentials"]["usernames"]
+    for username in users:
+        user = users[username]
+        config["credentials"]["usernames"][str(username)] = {
+            "name": str(user["name"]),
+            "email": str(user["email"]),
+            "password": str(user["password"]),
+        }
+except Exception:
+    pass
 
 authenticator = stauth.Authenticate(
-    credentials={"credentials": credentials},
+    credentials=config,
     cookie_name="hb_brief_auth",
-    cookie_key=st.secrets.get("auth", {}).get("cookie_key", "dev_fallback_key_change_me"),
+    cookie_key=str(st.secrets.get("auth", {}).get("cookie_key", "dev_fallback_key_change_me")),
     cookie_expiry_days=30,
     auto_hash=False,
 )
