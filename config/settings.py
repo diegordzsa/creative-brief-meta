@@ -31,7 +31,7 @@ FRAMES_FPS_INTERVAL = 5
 MAX_FRAMES_PER_VIDEO = 20
 
 # --- LLM ---
-CLASSIFIER_MODEL = "claude-sonnet-4-20250514"
+CLASSIFIER_MODEL = "claude-sonnet-4-6"
 
 # --- Hair Biolabs Product Data ---
 PRODUCT_DATA = {

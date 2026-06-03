@@ -43,7 +43,7 @@ Señales: {fmt.get('signals', '')}"""
 
 
 class BriefEngine:
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         self.api_key = api_key
         self.model = model
         self.mock_mode = not api_key
