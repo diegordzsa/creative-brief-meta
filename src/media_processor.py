@@ -81,10 +81,14 @@ class MediaProcessor:
 
         import anthropic
 
-        audio_path = self._extract_audio(video_path)
+        with open(video_path, "rb") as f:
+            video_data = base64.standard_b64encode(f.read()).decode("utf-8")
 
-        with open(audio_path, "rb") as f:
-            audio_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        media_type = "video/mp4"
+        if video_path.lower().endswith(".mp3"):
+            media_type = "audio/mpeg"
+        elif video_path.lower().endswith(".wav"):
+            media_type = "audio/wav"
 
         client = anthropic.Anthropic(api_key=self.anthropic_api_key)
 
@@ -98,14 +102,14 @@ class MediaProcessor:
                         "type": "document",
                         "source": {
                             "type": "base64",
-                            "media_type": "audio/mpeg",
-                            "data": audio_data,
+                            "media_type": media_type,
+                            "data": video_data,
                         },
                     },
                     {
                         "type": "text",
                         "text": (
-                            f"Transcribe this audio in {language} (Spanish). "
+                            f"Transcribe this video's audio in {language} (Spanish). "
                             "Return ONLY the transcription with timestamps in this exact format, one segment per line:\n"
                             "[M:SS - M:SS] transcribed text here\n\n"
                             "Group the text into natural segments of 5-15 seconds each. "
