@@ -1,4 +1,3 @@
-import base64
 import logging
 import os
 import subprocess
@@ -61,62 +60,68 @@ class MediaProcessor:
         frames = sorted(Path(output_dir).glob("frame_*.jpg"))
         return [str(f) for f in frames]
 
-    def _extract_audio(self, video_path: str) -> str:
-        audio_path = video_path.rsplit(".", 1)[0] + ".mp3"
-        cmd = [
-            "ffmpeg",
-            "-i", video_path,
-            "-vn",
-            "-acodec", "libmp3lame",
-            "-q:a", "4",
-            audio_path,
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return audio_path
-
     def transcribe_audio(self, video_path: str, language: str = "es") -> str:
         if self.mock_mode:
             logger.info("Mock mode: returning sample transcription")
             return MOCK_TRANSCRIPTION
 
-        import anthropic
+        import speech_recognition as sr
 
-        audio_path = self._extract_audio(video_path)
+        audio_path = video_path.rsplit(".", 1)[0] + "_audio.wav"
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            audio_path,
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to extract audio: {e.stderr}")
+            return "[Transcripción no disponible — no se pudo extraer el audio]"
 
-        with open(audio_path, "rb") as f:
-            audio_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        recognizer = sr.Recognizer()
+        lang_code = "es-ES" if language == "es" else language
+        chunk_duration = 50
 
-        client = anthropic.Anthropic(api_key=self.anthropic_api_key)
+        try:
+            with sr.AudioFile(audio_path) as source:
+                total_duration = source.DURATION
+                parts = []
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4000,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "audio",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "audio/mpeg",
-                            "data": audio_data,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Transcribe this audio in {language} (Spanish). "
-                            "Return ONLY the transcription with timestamps in this exact format, one segment per line:\n"
-                            "[M:SS - M:SS] transcribed text here\n\n"
-                            "Group the text into natural segments of 5-15 seconds each. "
-                            "Be precise with the timestamps. Do not add any commentary or headers."
-                        ),
-                    },
-                ],
-            }],
-        )
+                if total_duration <= chunk_duration:
+                    audio = recognizer.record(source)
+                    try:
+                        parts.append(recognizer.recognize_google(audio, language=lang_code))
+                    except sr.UnknownValueError:
+                        pass
+                else:
+                    offset = 0.0
+                    while offset < total_duration:
+                        dur = min(chunk_duration, total_duration - offset)
+                        audio = recognizer.record(source, duration=dur)
+                        try:
+                            parts.append(recognizer.recognize_google(audio, language=lang_code))
+                        except sr.UnknownValueError:
+                            pass
+                        offset += dur
 
-        return response.content[0].text.strip()
+            if not parts:
+                return "[Transcripción no disponible — audio no reconocido]"
+            return " ".join(parts)
+
+        except sr.RequestError as e:
+            logger.warning(f"Speech recognition service error: {e}")
+            return "[Transcripción no disponible — error del servicio]"
+        except Exception as e:
+            logger.warning(f"Transcription failed: {e}")
+            return f"[Transcripción no disponible — {e}]"
+        finally:
+            if os.path.exists(audio_path):
+                os.unlink(audio_path)
 
     def process_video_file(self, video_path: str, fps_interval: int = 5, max_frames: int = 20) -> dict[str, Any]:
         if self.mock_mode:
