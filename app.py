@@ -24,6 +24,7 @@ authenticator = stauth.Authenticate(
     cookie_name="hb_brief_auth",
     cookie_key=st.secrets.get("auth", {}).get("cookie_key", "dev_fallback_key_change_me"),
     cookie_expiry_days=30,
+    auto_hash=False,
 )
 
 authenticator.login(location="main")
