@@ -13,12 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
-config = {"credentials": {"usernames": {}}}
+creds = {"usernames": {}}
 try:
     users = st.secrets["credentials"]["usernames"]
     for username in users:
         user = users[username]
-        config["credentials"]["usernames"][str(username)] = {
+        creds["usernames"][str(username)] = {
             "name": str(user["name"]),
             "email": str(user["email"]),
             "password": str(user["password"]),
@@ -27,7 +27,7 @@ except Exception:
     pass
 
 authenticator = stauth.Authenticate(
-    credentials=config,
+    credentials=creds,
     cookie_name="hb_brief_auth",
     cookie_key=str(st.secrets.get("auth", {}).get("cookie_key", "dev_fallback_key_change_me")),
     cookie_expiry_days=30,
