@@ -92,33 +92,40 @@ class MediaProcessor:
 
         client = anthropic.Anthropic(api_key=self.anthropic_api_key)
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4000,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": video_data,
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=4000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": video_data,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Transcribe this video's audio in {language} (Spanish). "
-                            "Return ONLY the transcription with timestamps in this exact format, one segment per line:\n"
-                            "[M:SS - M:SS] transcribed text here\n\n"
-                            "Group the text into natural segments of 5-15 seconds each. "
-                            "Be precise with the timestamps. Do not add any commentary or headers."
-                        ),
-                    },
-                ],
-            }],
-        )
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Transcribe this video's audio in {language} (Spanish). "
+                                "Return ONLY the transcription with timestamps in this exact format, one segment per line:\n"
+                                "[M:SS - M:SS] transcribed text here\n\n"
+                                "Group the text into natural segments of 5-15 seconds each. "
+                                "Be precise with the timestamps. Do not add any commentary or headers."
+                            ),
+                        },
+                    ],
+                }],
+            )
+        except anthropic.BadRequestError as e:
+            raise RuntimeError(
+                f"Transcription failed — API error: {e.message} | "
+                f"media_type={media_type}, data_size={len(video_data)} chars, "
+                f"model=claude-sonnet-4-6"
+            ) from None
 
         return response.content[0].text.strip()
 
