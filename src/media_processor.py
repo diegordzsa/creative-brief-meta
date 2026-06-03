@@ -118,6 +118,32 @@ class MediaProcessor:
 
         return response.content[0].text.strip()
 
+    def process_video_file(self, video_path: str, fps_interval: int = 5, max_frames: int = 20) -> dict[str, Any]:
+        if self.mock_mode:
+            frames = self.extract_frames(video_path, fps_interval, max_frames)
+            transcription = self.transcribe_audio(video_path)
+            return {
+                "frames": frames,
+                "transcription": transcription,
+                "video_path": video_path,
+            }
+
+        frames = self.extract_frames(video_path, fps_interval, max_frames)
+        transcription = self.transcribe_audio(video_path)
+
+        stable_frames = []
+        stable_dir = tempfile.mkdtemp(prefix="hb_frames_")
+        for i, frame in enumerate(frames):
+            dest = os.path.join(stable_dir, f"frame_{i:03d}.jpg")
+            os.replace(frame, dest)
+            stable_frames.append(dest)
+
+        return {
+            "frames": stable_frames,
+            "transcription": transcription,
+            "video_path": video_path,
+        }
+
     def process_video(self, video_url: str, fps_interval: int = 5, max_frames: int = 20) -> dict[str, Any]:
         if self.mock_mode:
             video_path = self.download_video(video_url)

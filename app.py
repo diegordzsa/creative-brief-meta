@@ -5,7 +5,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import streamlit as st
 import streamlit_authenticator as stauth
-from src.pipeline import analyze_video, export_to_google_docs, save_to_database
+import tempfile
+import os
+from src.pipeline import analyze_video, analyze_video_file, export_to_google_docs, save_to_database
 
 st.set_page_config(
     page_title="Hair Biolabs — Creative Brief Generator",
@@ -41,13 +43,19 @@ if st.session_state.get("authentication_status"):
     st.sidebar.write(f"Hola, **{st.session_state.get('name', '')}**")
 
     st.title("Hair Biolabs — Creative Brief Generator")
-    st.markdown("Paste a video URL to analyze the creative format and generate briefs for the 4 alternate formats.")
+    st.markdown("Provide a video URL or upload an MP4 file to analyze the creative format and generate briefs for the 4 alternate formats.")
 
-    video_url = st.text_input("Video URL", placeholder="https://example.com/video.mp4")
+    tab_url, tab_upload = st.tabs(["Pegar enlace", "Subir archivo"])
 
-    if st.button("Analizar", type="primary", disabled=not video_url):
-        progress = st.status("Analyzing video...", expanded=True)
+    with tab_url:
+        video_url = st.text_input("Video URL", placeholder="https://example.com/video.mp4")
+        analyze_url = st.button("Analizar", type="primary", disabled=not video_url, key="btn_url")
 
+    with tab_upload:
+        uploaded_file = st.file_uploader("Sube un video MP4", type=["mp4"])
+        analyze_upload = st.button("Analizar", type="primary", disabled=uploaded_file is None, key="btn_upload")
+
+    def _make_progress_callback(status_widget):
         def on_progress(step: str, detail: str):
             labels = {
                 "download": "⬇️ Downloading and processing video...",
@@ -55,12 +63,26 @@ if st.session_state.get("authentication_status"):
                 "briefs": "✍️ Generating briefs for 4 alternate formats...",
                 "done": "✅ Analysis complete!",
             }
-            progress.update(label=labels.get(step, detail))
-            progress.write(detail)
+            status_widget.update(label=labels.get(step, detail))
+            status_widget.write(detail)
+        return on_progress
 
-        result = analyze_video(video_url, on_progress=on_progress)
+    if analyze_url:
+        progress = st.status("Analyzing video...", expanded=True)
+        result = analyze_video(video_url, on_progress=_make_progress_callback(progress))
         progress.update(label="✅ Analysis complete!", state="complete", expanded=False)
+        st.session_state["result"] = result
 
+    if analyze_upload and uploaded_file is not None:
+        progress = st.status("Analyzing video...", expanded=True)
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(uploaded_file.read())
+            tmp_path = tmp.name
+        try:
+            result = analyze_video_file(tmp_path, uploaded_file.name, on_progress=_make_progress_callback(progress))
+        finally:
+            os.unlink(tmp_path)
+        progress.update(label="✅ Analysis complete!", state="complete", expanded=False)
         st.session_state["result"] = result
 
     if "result" in st.session_state:

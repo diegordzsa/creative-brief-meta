@@ -58,6 +58,54 @@ def analyze_video(
     }
 
 
+def analyze_video_file(
+    video_path: str,
+    file_name: str,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict[str, Any]:
+    def progress(step: str, detail: str = ""):
+        logger.info(f"[{step}] {detail}")
+        if on_progress:
+            on_progress(step, detail)
+
+    media = MediaProcessor(anthropic_api_key=ANTHROPIC_API_KEY)
+    classifier = Classifier(api_key=ANTHROPIC_API_KEY)
+    brief_engine = BriefEngine(api_key=ANTHROPIC_API_KEY)
+
+    progress("download", "Processing uploaded video...")
+    media_result = media.process_video_file(video_path)
+
+    progress("classify", "Classifying creative format...")
+    analysis = classifier.classify(
+        frames=media_result["frames"],
+        transcription=media_result["transcription"],
+        metrics={},
+    )
+
+    progress("briefs", "Generating briefs for 4 alternate formats...")
+    ad = {
+        "id": file_name,
+        "name": file_name,
+        "video_url": f"upload://{file_name}",
+        "transcription": media_result["transcription"],
+        "frames": media_result["frames"],
+        "analysis": analysis,
+        "metrics": {},
+    }
+    briefs = brief_engine.generate_briefs(ad)
+
+    progress("done", "Analysis complete.")
+
+    return {
+        "video_url": f"upload://{file_name}",
+        "transcription": media_result["transcription"],
+        "frames": media_result["frames"],
+        "analysis": analysis,
+        "briefs": briefs,
+        "ad": ad,
+    }
+
+
 def export_to_google_docs(result: dict[str, Any]) -> str:
     exporter = GoogleDocsExporter(
         service_account_json=GOOGLE_SERVICE_ACCOUNT_JSON,
