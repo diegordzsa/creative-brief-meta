@@ -146,7 +146,7 @@ class BriefPDFGenerator:
 
         self._set_font("B", 18)
         pdf.set_text_color(*PINK)
-        pdf.cell(0, 10, f"Formato {num}/{total} · {name}", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 10, f"{num}. {name}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
         if storyboard_bytes:

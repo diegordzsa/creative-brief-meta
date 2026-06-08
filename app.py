@@ -8,7 +8,10 @@ import streamlit_authenticator as stauth
 import tempfile
 import os
 from datetime import datetime, timezone
-from src.pipeline import analyze_video, analyze_video_file, export_pdf_to_drive, save_to_database
+from src.pipeline import (
+    analyze_video, analyze_video_file, export_pdf_to_drive,
+    save_session, get_recent_sessions, get_session_pdf,
+)
 
 st.set_page_config(
     page_title="Hair Biolabs — Creative Brief Generator",
@@ -50,6 +53,46 @@ if st.session_state.get("authentication_status"):
     authenticator.logout("Cerrar sesion", location="sidebar")
     st.sidebar.write(f"Hola, **{st.session_state.get('name', '')}**")
 
+    # --- Session history sidebar ---
+    st.sidebar.divider()
+    st.sidebar.markdown("**Historial reciente**")
+
+    _hist_username = st.session_state.get("username", "unknown")
+    if "_history_cache" not in st.session_state:
+        st.session_state["_history_cache"] = get_recent_sessions(_hist_username, limit=10)
+
+    _hist_sessions = st.session_state["_history_cache"]
+
+    if not _hist_sessions:
+        st.sidebar.caption("Sin sesiones anteriores")
+    else:
+        for _s in _hist_sessions:
+            _created = _s.get("created_at", "")
+            try:
+                _dt = datetime.fromisoformat(str(_created).replace("Z", "+00:00"))
+                _date_label = _dt.strftime("%d %b %Y · %H:%M")
+            except (ValueError, AttributeError):
+                _date_label = str(_created)[:16] if _created else "—"
+
+            _source = _s.get("source_name", "—")
+            if len(_source) > 35:
+                _source = _source[:32] + "..."
+
+            _formato = _s.get("formato_detectado", "")
+            if _formato and len(_formato) > 30:
+                _formato = _formato.split(":")[0] if ":" in _formato else _formato[:30]
+
+            _btn_label = f"{_date_label}\n{_source}"
+            if _formato:
+                _btn_label += f"\n{_formato}"
+
+            if st.sidebar.button(_btn_label, key=f"hist_{_s['id']}", use_container_width=True):
+                st.session_state["viewing_history"] = _s["id"]
+                st.session_state.pop("result", None)
+                st.rerun()
+
+    st.sidebar.divider()
+
     st.title("Hair Biolabs — Creative Brief Generator")
     st.markdown("Sube un video o pega un enlace para analizar el formato creativo y generar briefs para los formatos alternativos.")
 
@@ -78,12 +121,17 @@ if st.session_state.get("authentication_status"):
         return on_progress
 
     if analyze_url:
+        st.session_state.pop("viewing_history", None)
         progress = st.status("Analizando video...", expanded=True)
         result = analyze_video(video_url, on_progress=_make_progress_callback(progress))
         progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
         st.session_state["result"] = result
+        _username = st.session_state.get("username", "unknown")
+        save_session(result, _username, video_url)
+        st.session_state.pop("_history_cache", None)
 
     if analyze_upload and uploaded_file is not None:
+        st.session_state.pop("viewing_history", None)
         progress = st.status("Analizando video...", expanded=True)
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             tmp.write(uploaded_file.read())
@@ -94,6 +142,86 @@ if st.session_state.get("authentication_status"):
             os.unlink(tmp_path)
         progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
         st.session_state["result"] = result
+        _username = st.session_state.get("username", "unknown")
+        save_session(result, _username, uploaded_file.name)
+        st.session_state.pop("_history_cache", None)
+
+    # --- Viewing a historical session ---
+    if "viewing_history" in st.session_state and "result" not in st.session_state:
+        import json as _json
+        _session_id = st.session_state["viewing_history"]
+        _hist_list = st.session_state.get("_history_cache", [])
+        _hist_session = next((s for s in _hist_list if s["id"] == _session_id), None)
+
+        if _hist_session:
+            _hd = _hist_session.get("header_data", {})
+            if isinstance(_hd, str):
+                _hd = _json.loads(_hd)
+
+            _hb = _hist_session.get("briefs_json", [])
+            if isinstance(_hb, str):
+                _hb = _json.loads(_hb)
+
+            st.info("Estas viendo una sesion anterior. Analiza un nuevo video para crear una sesion nueva.")
+            st.divider()
+
+            st.subheader("Video ganador analizado")
+            st.markdown(f"**Formato detectado:** {_hd.get('formato_detectado', '')}")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**Deseo (NO cambiar):**  \n{_hd.get('deseo', '')}")
+                st.markdown(f"**Nivel awareness:** {_hd.get('nivel_awareness', '')}")
+            with col2:
+                st.markdown(f"**Avatar / situacion (NO cambiar):**  \n{_hd.get('avatar_situacion', '')}")
+
+            with st.expander("Angulo ganador y mecanismo"):
+                st.markdown(f"**Angulo:** {_hd.get('angulo_ganador', '')}")
+                st.markdown(f"**Mecanismo:** {_hd.get('mecanismo', '')}")
+                st.markdown(f"**Villain:** {_hd.get('villain', '')}")
+
+            st.divider()
+
+            _pdf_path = _hist_session.get("pdf_storage_path", "")
+            if _pdf_path:
+                _pdf_data = get_session_pdf(_pdf_path)
+                if _pdf_data:
+                    _created = _hist_session.get("created_at", "")
+                    try:
+                        _dt = datetime.fromisoformat(str(_created).replace("Z", "+00:00"))
+                        _date_str = _dt.strftime("%Y-%m-%d")
+                    except (ValueError, AttributeError):
+                        _date_str = "unknown"
+                    st.download_button(
+                        label="\U0001f4e5 Descargar PDF",
+                        data=_pdf_data,
+                        file_name=f"brief_{_date_str}_hair_biolabs.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                    )
+                else:
+                    st.warning("No se pudo descargar el PDF")
+            else:
+                st.caption("PDF no disponible para esta sesion")
+
+            st.divider()
+
+            st.subheader("Briefs generados")
+            if _hb:
+                _tabs = st.tabs([str(b.get("formato_numero", i + 1)) for i, b in enumerate(_hb)])
+                for _tab, _brief in zip(_tabs, _hb):
+                    with _tab:
+                        st.markdown(f"### {_brief.get('formato_numero', '')}. {_brief.get('formato_destino', '')}")
+                        st.markdown("**Explicacion del formato**")
+                        st.markdown(_brief.get("explicacion", ""))
+                        _nota = _brief.get("nota_legal")
+                        if _nota:
+                            st.info(f"**Notacion antes de grabar (nexo legal):** {_nota}")
+                        st.markdown("**Speech (en parrafo · grabar tal cual)**")
+                        st.markdown(_brief.get("speech", ""))
+                        _ref = _brief.get("video_referencia", "")
+                        if _ref:
+                            st.caption(f"Video de referencia del formato: {_ref}")
 
     if "result" in st.session_state:
         result = st.session_state["result"]
@@ -128,7 +256,7 @@ if st.session_state.get("authentication_status"):
         st.divider()
 
         # --- Download + Upload buttons ---
-        col_dl, col_drive, col_db = st.columns(3)
+        col_dl, col_drive = st.columns(2)
 
         with col_dl:
             if pdf_bytes:
@@ -152,21 +280,15 @@ if st.session_state.get("authentication_status"):
                 else:
                     st.warning("No hay PDF para subir")
 
-        with col_db:
-            if st.button("\U0001f4be Guardar en base de datos"):
-                with st.spinner("Guardando en base de datos..."):
-                    save_to_database(result)
-                st.success("Guardado en base de datos.")
-
         st.divider()
 
         # --- Briefs by format ---
         st.subheader("Briefs generados")
 
-        tabs = st.tabs([f"Formato {b.get('formato_numero', i+1)}/{b.get('formato_total', len(briefs))}" for i, b in enumerate(briefs)])
+        tabs = st.tabs([str(b.get("formato_numero", i+1)) for i, b in enumerate(briefs)])
         for tab, brief in zip(tabs, briefs):
             with tab:
-                st.markdown(f"### {brief.get('formato_destino', '')}")
+                st.markdown(f"### {brief.get('formato_numero', '')}. {brief.get('formato_destino', '')}")
 
                 fmt_name = brief.get("formato_destino", "")
                 img_bytes = storyboard_images.get(fmt_name, b"")

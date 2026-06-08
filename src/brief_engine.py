@@ -82,7 +82,7 @@ class BriefEngine:
             ref_video = FORMAT_REFERENCE_VIDEOS.get(fmt["key"], "")
             brief["formato_origen"] = detected_format
             brief["formato_destino"] = fmt["name"]
-            brief["formato_numero"] = idx
+            brief["formato_numero"] = fmt["number"]
             brief["formato_total"] = len(other_formats)
             brief["video_referencia"] = ref_video
             briefs.append(brief)

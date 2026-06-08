@@ -159,3 +159,58 @@ def save_to_database(result: dict[str, Any]) -> None:
             formato_origen=brief["formato_origen"],
             formato_destino=brief["formato_destino"],
         )
+
+
+def save_session(result: dict[str, Any], username: str, source_name: str) -> str | None:
+    try:
+        db = create_database(url=SUPABASE_URL, key=SUPABASE_KEY)
+
+        serializable_briefs = []
+        for b in result.get("briefs", []):
+            serializable_briefs.append({
+                k: v for k, v in b.items()
+                if isinstance(v, (str, int, float, bool, list, dict, type(None)))
+            })
+
+        session_data = {
+            "username": username,
+            "source_name": source_name,
+            "video_url": result.get("video_url", ""),
+            "formato_detectado": result.get("header_data", {}).get("formato_detectado", ""),
+            "header_data": result.get("header_data", {}),
+            "briefs": serializable_briefs,
+            "pdf_storage_path": "",
+        }
+
+        session_id = db.save_session(session_data)
+
+        pdf_bytes = result.get("pdf_bytes", b"")
+        if pdf_bytes:
+            try:
+                pdf_path = db.upload_pdf(session_id, pdf_bytes)
+                db.update_session_pdf_path(session_id, pdf_path)
+            except Exception as e:
+                logger.warning(f"PDF upload failed (session still saved): {e}")
+
+        return session_id
+    except Exception as e:
+        logger.error(f"Failed to save session: {e}")
+        return None
+
+
+def get_recent_sessions(username: str, limit: int = 10) -> list[dict]:
+    try:
+        db = create_database(url=SUPABASE_URL, key=SUPABASE_KEY)
+        return db.get_recent_sessions(username, limit)
+    except Exception as e:
+        logger.error(f"Failed to fetch sessions: {e}")
+        return []
+
+
+def get_session_pdf(pdf_storage_path: str) -> bytes:
+    try:
+        db = create_database(url=SUPABASE_URL, key=SUPABASE_KEY)
+        return db.download_pdf(pdf_storage_path)
+    except Exception as e:
+        logger.error(f"Failed to download PDF: {e}")
+        return b""

@@ -92,6 +92,7 @@ PRODUCT_DATA = {
 # --- Creative Formats ---
 CREATIVE_FORMATS = {
     "formato_1": {
+        "number": 1,
         "name": "Reaction Style Hook x 3D Authority Mechanism (UGC Hybrid)",
         "structure": "Split-screen con creador en modo 'Reaction Channel' + animación 3D médica/científica. El creador reacciona y comenta la animación, pivotando hacia el mecanismo del producto.",
         "segments": [
@@ -104,6 +105,7 @@ CREATIVE_FORMATS = {
         "signals": "setup de 'React Channel', animación 3D simultánea, creador que ES el testimonio, lenguaje conversacional y de calle",
     },
     "formato_2": {
+        "number": 2,
         "name": "Anti-Product Paradigm Shift x Stage Classification Listicle",
         "structure": "Narrador de autoridad que invalida el acto de 'comprar productos' como solución, pivotando hacia un sistema personalizado basado en el estadio del problema.",
         "segments": [
@@ -116,6 +118,7 @@ CREATIVE_FORMATS = {
         "signals": "narrador 50+, lenguaje clínico y empático, grids de categorización, CTA de consulta gratuita",
     },
     "formato_3": {
+        "number": 3,
         "name": "Organic Podcast Leak x Scientific Bottleneck Education Framework",
         "structure": "Clip orgánico de podcast educativo. La narradora descarta soluciones una por una antes de revelar el 'bottleneck' científico real y el ingrediente que lo resuelve.",
         "segments": [
@@ -129,6 +132,7 @@ CREATIVE_FORMATS = {
         "signals": "setup de podcast o sofá casual, X rojos sobre competidores, metáfora biológica central, referencia a institución académica, precio ancla bajo",
     },
     "formato_4": {
+        "number": 4,
         "name": "The Salon Secret x Structural Cortical Degradation Hook",
         "structure": "Narrativa en primera persona de consumidora real que descubrió la causa real a través de una figura de autoridad de proximidad (hairstylist, esteticista, farmacéutica).",
         "segments": [
@@ -142,6 +146,7 @@ CREATIVE_FORMATS = {
         "signals": "storytelling en primera persona detallado, figura de autoridad de proximidad, 3D cross-section de cabello/piel, cliffhanger sin cierre completo",
     },
     "formato_5": {
+        "number": 5,
         "name": "Emotional Agitation Montage x 650nm Cellular Photobiomodulation Reveal",
         "structure": "Primeros 35-40s de agitación emocional pura, luego pivot a autoridad científica extrema. El contraste emocional/científico es el mecanismo central.",
         "segments": [
