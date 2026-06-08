@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 from datetime import datetime, timezone
@@ -147,6 +148,37 @@ class GoogleDocsExporter:
             self._docs_service.documents().batchUpdate(
                 documentId=doc_id, body={"requests": requests}
             ).execute()
+
+    def upload_pdf_to_drive(self, pdf_bytes: bytes, filename: str) -> str:
+        if self.mock_mode:
+            mock_url = f"https://drive.google.com/file/d/MOCK_{filename.replace(' ', '_')}/view"
+            logger.info(f"Mock PDF upload: {mock_url}")
+            return mock_url
+
+        from googleapiclient.http import MediaIoBaseUpload
+
+        file_metadata = {
+            "name": filename,
+            "mimeType": "application/pdf",
+        }
+        if self.drive_folder_id:
+            file_metadata["parents"] = [self.drive_folder_id]
+
+        media = MediaIoBaseUpload(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            resumable=True,
+        )
+
+        file = self._drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id, webViewLink",
+        ).execute()
+
+        file_url = file.get("webViewLink", f"https://drive.google.com/file/d/{file['id']}/view")
+        logger.info(f"PDF uploaded to Drive: {file_url}")
+        return file_url
 
     def _mock_single_export(
         self,

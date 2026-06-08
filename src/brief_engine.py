@@ -1,9 +1,10 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
-from config.settings import CREATIVE_FORMATS
+from config.settings import CREATIVE_FORMATS, FORMAT_REFERENCE_VIDEOS
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,25 @@ Segmentos:
 Señales: {fmt.get('signals', '')}"""
 
 
+def build_header_data(analysis: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "deseo": analysis.get("deseo_avatar", ""),
+        "avatar_situacion": analysis.get("situacion_avatar", ""),
+        "angulo_ganador": analysis.get("angulo_ganador", ""),
+        "mecanismo": analysis.get("mecanismo", ""),
+        "villain": analysis.get("villain", ""),
+        "nivel_awareness": analysis.get("nivel_awareness", ""),
+        "formato_detectado": analysis.get("formato_detectado", ""),
+    }
+
+
+def _parse_json_response(text: str) -> dict[str, Any]:
+    fence_match = re.search(r"```(?:json)?\s*\n(.*?)\n\s*```", text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1)
+    return json.loads(text.strip())
+
+
 class BriefEngine:
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         self.api_key = api_key
@@ -57,40 +77,34 @@ class BriefEngine:
         other_formats = _get_other_formats(detected_format)
 
         briefs = []
-        for fmt in other_formats:
+        for idx, fmt in enumerate(other_formats, start=1):
             brief = self._generate_single_brief(ad, analysis, fmt)
-            briefs.append({
-                "formato_origen": detected_format,
-                "formato_destino": fmt["name"],
-                "content": brief,
-            })
+            ref_video = FORMAT_REFERENCE_VIDEOS.get(fmt["key"], "")
+            brief["formato_origen"] = detected_format
+            brief["formato_destino"] = fmt["name"]
+            brief["formato_numero"] = idx
+            brief["formato_total"] = len(other_formats)
+            brief["video_referencia"] = ref_video
+            briefs.append(brief)
         return briefs
 
-    def _generate_single_brief(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> str:
+    def _generate_single_brief(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> dict[str, Any]:
         if self.mock_mode:
             return self._mock_brief(ad, analysis, target_format)
-
         return self._call_claude(ad, analysis, target_format)
 
-    def _call_claude(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> str:
+    def _call_claude(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> dict[str, Any]:
         import anthropic
 
         client = anthropic.Anthropic(api_key=self.api_key)
-
         format_desc = _build_format_description(target_format)
 
-        metrics = ad.get("metrics", {})
-        metrics_line = ""
-        if metrics.get("ctr") or metrics.get("purchase_roas"):
-            metrics_line = f"\n- **Métricas:** CTR {metrics.get('ctr', 0):.2f}% | ROAS {metrics.get('purchase_roas', 0):.2f}x | Hook Rate {metrics.get('hook_rate', 0):.1f}%"
+        user_prompt = f"""Genera un brief para un nuevo ad de Hair Biolabs España en el formato indicado.
 
-        user_prompt = f"""Genera un brief completo para un nuevo ad de Hair Biolabs España.
+## AD GANADOR ANALIZADO
+- **Formato detectado:** {analysis.get('formato_detectado', '')}
 
-## AD ANALIZADO
-- **Nombre:** {ad.get('name', '')}
-- **Formato detectado:** {analysis.get('formato_detectado', '')}{metrics_line}
-
-## ELEMENTOS DEL AD QUE DEBES MANTENER
+## ELEMENTOS QUE SE MANTIENEN (NO cambiar)
 - **Deseo del avatar:** {analysis.get('deseo_avatar', '')}
 - **Situación del avatar:** {analysis.get('situacion_avatar', '')}
 - **Ángulo ganador:** {analysis.get('angulo_ganador', '')}
@@ -98,62 +112,49 @@ class BriefEngine:
 - **Villain:** {analysis.get('villain', '')}
 - **Nivel de awareness:** {analysis.get('nivel_awareness', '')}
 
-## FORMATO OBJETIVO (para el nuevo brief)
+## FORMATO OBJETIVO (el nuevo video debe seguir esta estructura)
 {format_desc}
 
-## INSTRUCCIONES
-Genera el brief completo con:
-1. Por qué este formato puede ganar (2-3 párrafos)
-2. Explicación del formato
-3. Estructura de segmentos (tabla markdown)
-4. Speech completo listo para grabar (español de España, habla natural)
-5. Prompts de Seadance por segmento (descripción visual ultra-detallada)
-6. Notas de producción (ratio 9:16, duración, tipo de creador, props, cámara)"""
+Genera el JSON con: explicacion_formato, nota_antes_de_grabar, escenas (exactamente 9), speech_completo."""
 
         response = client.messages.create(
             model=self.model,
-            max_tokens=4000,
+            max_tokens=6000,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
 
-        return response.content[0].text
+        raw_text = response.content[0].text
+        try:
+            parsed = _parse_json_response(raw_text)
+        except (json.JSONDecodeError, ValueError):
+            logger.error("Failed to parse brief JSON, returning raw text as fallback")
+            return {
+                "explicacion": raw_text,
+                "escenas": [],
+                "speech": raw_text,
+                "nota_legal": None,
+            }
 
-    def _mock_brief(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> str:
-        segments_table = "\n".join(
-            f"| {s['name']} | {s['time']} | {s['description']} | [texto overlay] |"
-            for s in target_format.get("segments", [])
-        )
+        return {
+            "explicacion": parsed.get("explicacion_formato", ""),
+            "escenas": parsed.get("escenas", []),
+            "speech": parsed.get("speech_completo", ""),
+            "nota_legal": parsed.get("nota_antes_de_grabar"),
+        }
 
-        return f"""## {target_format['name']}
+    def _mock_brief(self, ad: dict[str, Any], analysis: dict[str, Any], target_format: dict[str, Any]) -> dict[str, Any]:
+        escenas = [
+            {"numero": i, "etiqueta": f"Escena {i} — {seg['name']}", "descripcion_visual": seg["description"]}
+            for i, seg in enumerate(target_format.get("segments", [])[:9], start=1)
+        ]
+        while len(escenas) < 9:
+            n = len(escenas) + 1
+            escenas.append({"numero": n, "etiqueta": f"Escena {n}", "descripcion_visual": "Escena adicional del formato"})
 
-### Por qué este formato puede ganar
-El ad original en formato "{analysis.get('formato_detectado', '')}" ha demostrado que el ángulo "{analysis.get('angulo_ganador', '')}" conecta fuertemente con el avatar. El formato {target_format['name']} permite reformular este mismo mensaje aprovechando una estructura narrativa diferente que puede capturar segmentos del público que no responden al formato original.
-
-La ventaja específica de este formato es su estructura: {target_format['structure']}
-
-Al mantener el mecanismo ({analysis.get('mecanismo', '')}) pero cambiando la forma de presentarlo, ampliamos el reach sin diluir el mensaje que ya sabemos que funciona.
-
-### Explicación del formato
-{target_format['structure']}
-
-Señales clave: {target_format.get('signals', '')}
-
-### Estructura de segmentos
-| Segmento | Tiempo | Descripción | Texto overlay |
-|----------|--------|-------------|---------------|
-{segments_table}
-
-### Speech completo (listo para grabar)
-[MOCK — En producción, aquí iría el speech completo en español de España, escrito en flujo natural de habla, sin puntos de guión, tal como lo diría el creador a cámara. El speech mantendría el ángulo ganador "{analysis.get('angulo_ganador', '')}" y el mecanismo "{analysis.get('mecanismo', '')}" adaptados a la estructura narrativa de este formato.]
-
-### Prompts de Seadance por segmento
-{chr(10).join(f'**Segmento: {s["name"]} ({s["time"]})**{chr(10)}Prompt: [MOCK — Descripción visual ultra-detallada para Seadance: encuadre, iluminación, persona, props Hair Biolabs, texto overlay, estética]{chr(10)}' for s in target_format.get('segments', []))}
-
-### Notas de producción
-- **Ratio:** 9:16 (vertical, optimizado para Stories/Reels)
-- **Duración objetivo:** {target_format['segments'][-1]['time'] if target_format.get('segments') else '60s+'}
-- **Tipo de creador:** [Según formato]
-- **Props necesarios:** Producto Hair Biolabs (REDENSIFY™ o Anti-Hair Loss Serum), setup según formato
-- **Setup de cámara:** iPhone/smartphone para UGC, estudio para formatos de autoridad
-"""
+        return {
+            "explicacion": f"Se mapeó el ángulo ganador ({analysis.get('angulo_ganador', '')}) a la estructura del formato {target_format['name']}. {target_format['structure']}",
+            "escenas": escenas,
+            "speech": f"[MOCK — En producción, aquí iría el speech completo en español de España, manteniendo el ángulo ganador \"{analysis.get('angulo_ganador', '')}\" y el mecanismo \"{analysis.get('mecanismo', '')}\" adaptados a la estructura narrativa de {target_format['name']}. El speech sería texto corrido natural, listo para grabar tal cual.]",
+            "nota_legal": None,
+        }

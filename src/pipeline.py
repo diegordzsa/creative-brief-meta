@@ -1,14 +1,94 @@
 import logging
+from datetime import datetime, timezone
 from typing import Any, Callable
 
-from config.settings import ANTHROPIC_API_KEY, GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SERVICE_ACCOUNT_JSON, SUPABASE_KEY, SUPABASE_URL
+from config.settings import (
+    ANTHROPIC_API_KEY,
+    GOOGLE_DRIVE_FOLDER_ID,
+    GOOGLE_SERVICE_ACCOUNT_JSON,
+    OPENAI_API_KEY,
+    SUPABASE_KEY,
+    SUPABASE_URL,
+)
 from src.media_processor import MediaProcessor
 from src.classifier import Classifier
-from src.brief_engine import BriefEngine
+from src.brief_engine import BriefEngine, build_header_data
+from src.storyboard_generator import StoryboardGenerator
+from src.pdf_generator import BriefPDFGenerator
 from src.google_docs_exporter import GoogleDocsExporter
 from src.database import create_database
 
 logger = logging.getLogger(__name__)
+
+
+def _run_pipeline(
+    media_result: dict[str, Any],
+    file_name: str,
+    video_url: str,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict[str, Any]:
+    def progress(step: str, detail: str = ""):
+        logger.info(f"[{step}] {detail}")
+        if on_progress:
+            on_progress(step, detail)
+
+    classifier = Classifier(api_key=ANTHROPIC_API_KEY)
+    brief_engine = BriefEngine(api_key=ANTHROPIC_API_KEY)
+    storyboard_gen = StoryboardGenerator(openai_api_key=OPENAI_API_KEY)
+
+    progress("classify", "Classifying creative format...")
+    analysis = classifier.classify(
+        frames=media_result["frames"],
+        transcription=media_result["transcription"],
+        metrics={},
+    )
+
+    progress("briefs", "Generating briefs for alternate formats...")
+    ad = {
+        "id": video_url,
+        "name": file_name,
+        "video_url": video_url,
+        "transcription": media_result["transcription"],
+        "frames": media_result["frames"],
+        "analysis": analysis,
+        "metrics": {},
+    }
+    briefs = brief_engine.generate_briefs(ad)
+    header_data = build_header_data(analysis)
+
+    progress("storyboards", "Generating storyboard reference images...")
+    storyboard_images = {}
+    for brief in briefs:
+        fmt_name = brief.get("formato_destino", "")
+        scenes = brief.get("escenas", [])
+        try:
+            img_bytes = storyboard_gen.generate_storyboard(scenes, fmt_name)
+            storyboard_images[fmt_name] = img_bytes
+        except Exception as e:
+            logger.error(f"Storyboard generation failed for {fmt_name}: {e}")
+            storyboard_images[fmt_name] = b""
+
+    progress("pdf", "Generating PDF brief...")
+    pdf_gen = BriefPDFGenerator()
+    try:
+        pdf_bytes = pdf_gen.generate(header_data, briefs, storyboard_images)
+    except Exception as e:
+        logger.error(f"PDF generation failed: {e}")
+        pdf_bytes = b""
+
+    progress("done", "Analysis complete.")
+
+    return {
+        "video_url": video_url,
+        "transcription": media_result["transcription"],
+        "frames": media_result["frames"],
+        "analysis": analysis,
+        "briefs": briefs,
+        "header_data": header_data,
+        "storyboard_images": storyboard_images,
+        "pdf_bytes": pdf_bytes,
+        "ad": ad,
+    }
 
 
 def analyze_video(
@@ -21,41 +101,11 @@ def analyze_video(
             on_progress(step, detail)
 
     media = MediaProcessor(anthropic_api_key=ANTHROPIC_API_KEY)
-    classifier = Classifier(api_key=ANTHROPIC_API_KEY)
-    brief_engine = BriefEngine(api_key=ANTHROPIC_API_KEY)
-
     progress("download", "Downloading and processing video...")
     media_result = media.process_video(video_url)
 
-    progress("classify", "Classifying creative format...")
-    analysis = classifier.classify(
-        frames=media_result["frames"],
-        transcription=media_result["transcription"],
-        metrics={},
-    )
-
-    progress("briefs", "Generating briefs for 4 alternate formats...")
-    ad = {
-        "id": video_url,
-        "name": video_url.split("/")[-1] if "/" in video_url else video_url,
-        "video_url": video_url,
-        "transcription": media_result["transcription"],
-        "frames": media_result["frames"],
-        "analysis": analysis,
-        "metrics": {},
-    }
-    briefs = brief_engine.generate_briefs(ad)
-
-    progress("done", "Analysis complete.")
-
-    return {
-        "video_url": video_url,
-        "transcription": media_result["transcription"],
-        "frames": media_result["frames"],
-        "analysis": analysis,
-        "briefs": briefs,
-        "ad": ad,
-    }
+    file_name = video_url.split("/")[-1] if "/" in video_url else video_url
+    return _run_pipeline(media_result, file_name, video_url, on_progress)
 
 
 def analyze_video_file(
@@ -69,41 +119,20 @@ def analyze_video_file(
             on_progress(step, detail)
 
     media = MediaProcessor(anthropic_api_key=ANTHROPIC_API_KEY)
-    classifier = Classifier(api_key=ANTHROPIC_API_KEY)
-    brief_engine = BriefEngine(api_key=ANTHROPIC_API_KEY)
-
     progress("download", "Processing uploaded video...")
     media_result = media.process_video_file(video_path)
 
-    progress("classify", "Classifying creative format...")
-    analysis = classifier.classify(
-        frames=media_result["frames"],
-        transcription=media_result["transcription"],
-        metrics={},
+    return _run_pipeline(media_result, file_name, f"upload://{file_name}", on_progress)
+
+
+def export_pdf_to_drive(result: dict[str, Any]) -> str:
+    exporter = GoogleDocsExporter(
+        service_account_json=GOOGLE_SERVICE_ACCOUNT_JSON,
+        drive_folder_id=GOOGLE_DRIVE_FOLDER_ID,
     )
-
-    progress("briefs", "Generating briefs for 4 alternate formats...")
-    ad = {
-        "id": file_name,
-        "name": file_name,
-        "video_url": f"upload://{file_name}",
-        "transcription": media_result["transcription"],
-        "frames": media_result["frames"],
-        "analysis": analysis,
-        "metrics": {},
-    }
-    briefs = brief_engine.generate_briefs(ad)
-
-    progress("done", "Analysis complete.")
-
-    return {
-        "video_url": f"upload://{file_name}",
-        "transcription": media_result["transcription"],
-        "frames": media_result["frames"],
-        "analysis": analysis,
-        "briefs": briefs,
-        "ad": ad,
-    }
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    filename = f"[{today}] HairBiolabs ES — Brief.pdf"
+    return exporter.upload_pdf_to_drive(result["pdf_bytes"], filename)
 
 
 def export_to_google_docs(result: dict[str, Any]) -> str:
@@ -126,7 +155,7 @@ def save_to_database(result: dict[str, Any]) -> None:
         db.insert_brief(
             ad_id=result["video_url"],
             tipo="BRIEF",
-            brief_content=brief["content"],
+            brief_content=brief.get("speech", ""),
             formato_origen=brief["formato_origen"],
             formato_destino=brief["formato_destino"],
         )

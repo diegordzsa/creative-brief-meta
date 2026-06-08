@@ -30,6 +30,9 @@ SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 FRAMES_FPS_INTERVAL = 5
 MAX_FRAMES_PER_VIDEO = 20
 
+# --- OpenAI (DALL-E 3 storyboards) ---
+OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
+
 # --- LLM ---
 CLASSIFIER_MODEL = "claude-sonnet-4-6"
 
@@ -152,4 +155,13 @@ CREATIVE_FORMATS = {
         ],
         "signals": "opening con imagen de daño máximo, montaje con 5+ clips de pain points, invalidación de Minoxidil por nombre, contraste identitario, wavelength 650nm, citation de journal",
     },
+}
+
+# --- Format Reference Videos (from creative formats spreadsheet, Column 5) ---
+FORMAT_REFERENCE_VIDEOS = {
+    "formato_1": "https://drive.google.com/file/d/1jCZ7Nq9r2huSboszuKX1Y7WNwTliFaQM/view",
+    "formato_2": "https://drive.google.com/file/d/1ObKYgT6G_Z4jre3YeNNRYpdfJbbGItZJ/view",
+    "formato_3": "https://drive.google.com/file/d/1ro2a8M7y_-KPlaVziG5fM7MI2o-maSJc/view",
+    "formato_4": "https://drive.google.com/file/d/19U-v5ONYeECTE9dGKeC1ZWxCy6obuEVI/view",
+    "formato_5": "https://drive.google.com/file/d/18ucej2W8Hpcv8yJpBobaxihcV7oYCUht/view",
 }
