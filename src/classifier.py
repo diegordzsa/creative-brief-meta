@@ -1,10 +1,15 @@
 import base64
+import io
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 logger = logging.getLogger(__name__)
+
+MAX_IMAGE_DIMENSION = 1024
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -52,6 +57,21 @@ class Classifier:
 
         return self._call_claude(frames, transcription, metrics)
 
+    @staticmethod
+    def _resize_frame(frame_path: str) -> str | None:
+        try:
+            img = Image.open(frame_path)
+            w, h = img.size
+            if max(w, h) > MAX_IMAGE_DIMENSION:
+                ratio = MAX_IMAGE_DIMENSION / max(w, h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            return base64.b64encode(buf.getvalue()).decode("utf-8")
+        except Exception as e:
+            logger.warning(f"Skipping invalid frame {frame_path}: {e}")
+            return None
+
     def _call_claude(self, frames: list[str], transcription: str, metrics: dict[str, Any]) -> dict[str, Any]:
         import anthropic
 
@@ -80,9 +100,10 @@ class Classifier:
         })
 
         for frame_path in frames:
-            if Path(frame_path).exists():
-                with open(frame_path, "rb") as f:
-                    image_data = base64.b64encode(f.read()).decode("utf-8")
+            if not Path(frame_path).exists() or Path(frame_path).stat().st_size == 0:
+                continue
+            image_data = self._resize_frame(frame_path)
+            if image_data:
                 content.append({
                     "type": "image",
                     "source": {
@@ -112,12 +133,18 @@ class Classifier:
 }""",
         })
 
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            system=self.system_prompt,
-            messages=[{"role": "user", "content": content}],
-        )
+        try:
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=self.system_prompt,
+                messages=[{"role": "user", "content": content}],
+            )
+        except anthropic.BadRequestError as e:
+            logger.error(f"Anthropic BadRequestError: {e.message}")
+            raise RuntimeError(
+                f"Error de la API de Claude: {e.message}"
+            ) from e
 
         raw_text = response.content[0].text.strip()
         return json.loads(raw_text)

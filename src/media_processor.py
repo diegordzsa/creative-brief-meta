@@ -40,7 +40,7 @@ class MediaProcessor:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         return output_path
 
-    def extract_frames(self, video_path: str, fps_interval: int = 5, max_frames: int = 20) -> list[str]:
+    def extract_frames(self, video_path: str, fps_interval: int = 5, max_frames: int = 10) -> list[str]:
         if self.mock_mode:
             logger.info(f"Mock mode: would extract frames from {video_path}")
             return [f"mock_frame_{i:03d}.jpg" for i in range(min(12, max_frames))]
@@ -123,7 +123,7 @@ class MediaProcessor:
             if os.path.exists(audio_path):
                 os.unlink(audio_path)
 
-    def process_video_file(self, video_path: str, fps_interval: int = 5, max_frames: int = 20) -> dict[str, Any]:
+    def process_video_file(self, video_path: str, fps_interval: int = 5, max_frames: int = 10) -> dict[str, Any]:
         if self.mock_mode:
             frames = self.extract_frames(video_path, fps_interval, max_frames)
             transcription = self.transcribe_audio(video_path)
@@ -149,7 +149,7 @@ class MediaProcessor:
             "video_path": video_path,
         }
 
-    def process_video(self, video_url: str, fps_interval: int = 5, max_frames: int = 20) -> dict[str, Any]:
+    def process_video(self, video_url: str, fps_interval: int = 5, max_frames: int = 10) -> dict[str, Any]:
         if self.mock_mode:
             video_path = self.download_video(video_url)
             frames = self.extract_frames(video_path, fps_interval, max_frames)

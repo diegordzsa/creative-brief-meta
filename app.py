@@ -123,12 +123,16 @@ if st.session_state.get("authentication_status"):
     if analyze_url:
         st.session_state.pop("viewing_history", None)
         progress = st.status("Analizando video...", expanded=True)
-        result = analyze_video(video_url, on_progress=_make_progress_callback(progress))
-        progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
-        st.session_state["result"] = result
-        _username = st.session_state.get("username", "unknown")
-        save_session(result, _username, video_url)
-        st.session_state.pop("_history_cache", None)
+        try:
+            result = analyze_video(video_url, on_progress=_make_progress_callback(progress))
+            progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
+            st.session_state["result"] = result
+            _username = st.session_state.get("username", "unknown")
+            save_session(result, _username, video_url)
+            st.session_state.pop("_history_cache", None)
+        except Exception as e:
+            progress.update(label="❌ Error", state="error", expanded=False)
+            st.error(f"Error al analizar el video: {e}")
 
     if analyze_upload and uploaded_file is not None:
         st.session_state.pop("viewing_history", None)
@@ -138,13 +142,16 @@ if st.session_state.get("authentication_status"):
             tmp_path = tmp.name
         try:
             result = analyze_video_file(tmp_path, uploaded_file.name, on_progress=_make_progress_callback(progress))
+            progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
+            st.session_state["result"] = result
+            _username = st.session_state.get("username", "unknown")
+            save_session(result, _username, uploaded_file.name)
+            st.session_state.pop("_history_cache", None)
+        except Exception as e:
+            progress.update(label="❌ Error", state="error", expanded=False)
+            st.error(f"Error al analizar el video: {e}")
         finally:
             os.unlink(tmp_path)
-        progress.update(label="✅ Analisis completo!", state="complete", expanded=False)
-        st.session_state["result"] = result
-        _username = st.session_state.get("username", "unknown")
-        save_session(result, _username, uploaded_file.name)
-        st.session_state.pop("_history_cache", None)
 
     # --- Viewing a historical session ---
     if "viewing_history" in st.session_state and "result" not in st.session_state:

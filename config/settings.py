@@ -28,7 +28,7 @@ SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 
 # --- Media Processing ---
 FRAMES_FPS_INTERVAL = 5
-MAX_FRAMES_PER_VIDEO = 20
+MAX_FRAMES_PER_VIDEO = 10
 
 # --- OpenAI (DALL-E 3 storyboards) ---
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
