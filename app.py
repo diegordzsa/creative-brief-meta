@@ -35,19 +35,25 @@ except Exception:
 if "remember_me_pref" not in st.session_state:
     st.session_state["remember_me_pref"] = True
 
+_cookie_expiry = 30 if st.session_state["remember_me_pref"] else 0
+
 authenticator = stauth.Authenticate(
     credentials=creds,
     cookie_name="hb_brief_auth",
     cookie_key=str(st.secrets.get("auth", {}).get("cookie_key", "dev_fallback_key_change_me")),
-    cookie_expiry_days=30 if st.session_state["remember_me_pref"] else 0,
+    cookie_expiry_days=_cookie_expiry,
     auto_hash=False,
 )
 
-authenticator.login(location="main")
-
 if not st.session_state.get("authentication_status"):
     remember = st.checkbox("Recordarme", value=st.session_state["remember_me_pref"])
-    st.session_state["remember_me_pref"] = remember
+    if remember != st.session_state["remember_me_pref"]:
+        st.session_state["remember_me_pref"] = remember
+        if not remember:
+            authenticator.cookie_controller.delete_cookie()
+        st.rerun()
+
+authenticator.login(location="main")
 
 if st.session_state.get("authentication_status"):
     authenticator.logout("Cerrar sesion", location="sidebar")
