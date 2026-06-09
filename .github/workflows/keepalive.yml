@@ -1,0 +1,17 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping Streamlit app
+        run: |
+          curl -sS -o /dev/null -w "HTTP Status: %{http_code}\nTime: %{time_total}s\n" \
+            --max-time 30 \
+            "https://settings-h7tsg5bpfiqedmb9aqqhnt.streamlit.app/" || true
